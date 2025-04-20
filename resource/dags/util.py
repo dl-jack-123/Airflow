@@ -26,11 +26,14 @@ class DataConverter:
         :param is_int: 是否轉換為整數
         :return: 轉換後的數值或 None
         """
-        if value == "--":
-            return None
-        if isinstance(value, (int, float)):
+        if isinstance(value, str):
+            if value.replace("-", "").strip() in ["", "N/A"]:
+                return None
+            else:
+                return int(value.replace(",", "")) if is_int else float(value.replace(",", ""))
+        elif isinstance(value, (int, float)):
             return int(value) if is_int else float(value)
-        return int(value.replace(",", "")) if is_int else float(value.replace(",", ""))
+        return None
 
 def is_trading_day(execution_date: datetime) -> bool:
     """

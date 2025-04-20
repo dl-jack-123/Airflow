@@ -49,6 +49,7 @@ def scrape_trading_date(**context) -> List[Dict]:
             "id": "",
             "response": "json"
         }
+        primary_keys = []
         
         with httpx.Client() as client:
             response = client.post(url, data=payload)
@@ -78,7 +79,10 @@ def scrape_trading_date(**context) -> List[Dict]:
                     description = cols[3].text.strip()
                     
                     # 判斷是否為休假日
-                    is_holiday = any(keyword in description for keyword in ["放假", "休市", "無交易", '議價最後交易日']) or name == '農曆春節前債券處所議價最後交易日'
+                    is_holiday = (
+                        any(keyword in description for keyword in ["放假", "休市", "無交易"]) or
+                        "市場無交易，僅辦理給付結算" in description
+                    ) and name != '農曆春節前國際債券交易系統最後交易日'
                     
                     # 處理日期格式
                     date_parts = date_text.split('<br />')
@@ -87,51 +91,68 @@ def scrape_trading_date(**context) -> List[Dict]:
                         if not date_part:
                             continue
                             
-                        # 移除多餘的空白和換行
-                        date_part = ' '.join(date_part.split())
-                        
-                        # 處理多個日期的情況（例如 "1月21日及1月22日"）
-                        if '及' in date_part:
-                            dates = date_part.split('及')
+                        # 處理多個日期的情況（例如 "1月21日及1月22日市場無交易，僅辦理給付結算。"）
+                        if '及' in description:
+                            # 先分割出日期部分
+                            date_parts = description.split('市場')[0].strip().replace('及', '、').split('、')
+                            for date_str in date_parts:
+                                try:
+                                    # 處理 "月日" 格式
+                                    if '月' in date_str and '日' in date_str:
+                                        # 移除可能的空白
+                                        date_str = date_str.strip()
+                                        # 分割月份和日期
+                                        month_day = date_str.split('月')
+                                        month = int(month_day[0])
+                                        day = int(month_day[1].replace('日', ''))
+                                        date_obj = datetime(year, month, day).date()
+                                        # 判斷是否為休假日
+                                        is_holiday = (
+                                            any(keyword in description for keyword in ["放假", "休市", "無交易"]) or
+                                            "市場無交易，僅辦理給付結算" in description
+                                        ) 
+                                        if date_obj not in primary_keys:
+                                            primary_keys.append(date_obj)
+                                            trading_dates.append({
+                                                "date": date_obj,
+                                                "name": name,
+                                                "is_holiday": is_holiday,
+                                                "description": description,
+                                                "country": "TW"
+                                            })
+                                except (ValueError, IndexError) as e:
+                                    logger.warning(f"Error parsing date {date_str}: {str(e)}")
+                        # 處理其他格式的日期
+                        elif ' ' in date_part or '\n' in date_part or '\r' in date_part or '\t' in date_part or '日' in date_part:
+                            # 分割日期字串，處理所有可能的分隔符號
+                            # 先將所有特殊字符替換為空格
+                            date_part = date_part.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+                            # 在每個"日"後面添加空格，以處理沒有空格分隔的連續日期
+                            date_part = date_part.replace('日', '日 ')
+                            # 分割日期字串
+                            dates = date_part.split()
                             for single_date in dates:
                                 try:
                                     # 處理 "月日" 格式
                                     if '月' in single_date and '日' in single_date:
+                                        # 移除可能的空白
+                                        single_date = single_date.strip()
+                                        # 分割月份和日期
                                         month_day = single_date.split('月')
                                         month = int(month_day[0])
                                         day = int(month_day[1].replace('日', ''))
                                         date_obj = datetime(year, month, day).date()
-                                        
-                                        trading_dates.append({
-                                            "date": date_obj,
-                                            "name": name,
+                                        if date_obj not in primary_keys:
+                                            primary_keys.append(date_obj)
+                                            trading_dates.append({
+                                                "date": date_obj,
+                                                "name": name,
                                             "is_holiday": is_holiday,
                                             "description": description,
                                             "country": "TW"
-                                        })
+                                            })
                                 except (ValueError, IndexError) as e:
                                     logger.warning(f"Error parsing date {single_date}: {str(e)}")
-                                    continue
-                        else:
-                            # 處理單一日期
-                            try:
-                                # 處理 "月日" 格式
-                                if '月' in date_part and '日' in date_part:
-                                    month_day = date_part.split('月')
-                                    month = int(month_day[0])
-                                    day = int(month_day[1].replace('日', ''))
-                                    date_obj = datetime(year, month, day).date()
-                                    
-                                    trading_dates.append({
-                                        "date": date_obj,
-                                        "name": name,
-                                        "is_holiday": is_holiday,
-                                        "description": description,
-                                        "country": "TW"
-                                    })
-                            except (ValueError, IndexError) as e:
-                                logger.warning(f"Error parsing date {date_part}: {str(e)}")
-                                continue
                             
                 except Exception as e:
                     logger.warning(f"Error parsing row: {str(e)}")

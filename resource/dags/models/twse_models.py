@@ -66,3 +66,20 @@ class ShortSelling(Base):
     __table_args__ = (
         PrimaryKeyConstraint('date', 'stock_code'),
     )
+
+class AfterHoursTrading(Base):
+    __tablename__ = 'after_hours_trading'
+    
+    date = Column(Date, primary_key=True)  # 日期
+    stock_code = Column(String(10), primary_key=True)  # 證券代號
+    stock_name = Column(String(50))  # 證券名稱
+    trade_volume = Column(Integer)  # 成交數量
+    trade_count = Column(Integer)  # 成交筆數
+    trade_amount = Column(BigInteger)  # 成交金額
+    trade_price = Column(Numeric(10, 2))  # 成交價
+    last_bid_volume = Column(Integer)  # 最後揭示買量
+    last_ask_volume = Column(Integer)  # 最後揭示賣量
+
+    __table_args__ = (
+        PrimaryKeyConstraint('date', 'stock_code'),
+    )

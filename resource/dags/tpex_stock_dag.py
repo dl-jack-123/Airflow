@@ -30,7 +30,7 @@ default_args = {
     'depends_on_past': False,
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 3,
+    'retries': 5,
     'retry_delay': timedelta(minutes=5),
 }
 
@@ -80,36 +80,62 @@ def scrape_tpex_stock(**context) -> List[Dict]:
                     for row in table["data"]:
                         try:
                             # 解析漲跌符號和價差
-                            change_symbol = row[3][0] if row[3] and row[3] != "--" else None
-                            change_value = DataConverter.convert_value(row[3][1:].strip()) if row[3] and row[3] != "--" else None
-                            if change_value is not None:
-                                if change_symbol == "+":
-                                    change_value = abs(change_value)
-                                elif change_symbol == "-":
-                                    change_value = -abs(change_value)
+                            if row[3].strip() in ["除權", "除息", "除權息"]:
+                                change_value = None
+                            else:
+                                change_symbol = row[3][0] if row[3] and row[3] != "--" else None
+                                change_value = DataConverter.convert_value(row[3][1:].strip()) if row[3] and row[3] != "--" else None
+                                if change_value is not None:
+                                    if change_symbol == "+":
+                                        change_value = abs(change_value)
+                                    elif change_symbol == "-":
+                                        change_value = -abs(change_value)
                                 else:
                                     change_value = 0.0
 
-                            quote_data.append({
-                                "date": execution_date.date().isoformat(),
-                                "stock_code": row[0],
-                                "stock_name": row[1],
-                                "close_price": DataConverter.convert_value(row[2]),
-                                "change_value": change_value,  # 合併後的漲跌價差
-                                "open_price": DataConverter.convert_value(row[4]),
-                                "high_price": DataConverter.convert_value(row[5]),
-                                "low_price": DataConverter.convert_value(row[6]),
-                                "trade_volume": DataConverter.convert_value(row[8], is_int=True),
-                                "trade_amount": DataConverter.convert_value(row[9], is_int=True),
-                                "trade_count": DataConverter.convert_value(row[10], is_int=True),
-                                "last_bid_price": DataConverter.convert_value(row[11]),
-                                "last_bid_volume": DataConverter.convert_value(row[12], is_int=True),
-                                "last_ask_price": DataConverter.convert_value(row[13]),
-                                "last_ask_volume": DataConverter.convert_value(row[14], is_int=True),
-                                "pe_ratio": None  # 上櫃股票沒有本益比資料
-                            })
+                            # 判斷資料格式
+                            # 格式1: 最後買價和最後賣價
+                            # 格式2: 最後買價、最後買量、最後賣價、最後賣量
+                            if len(row) >= 18:  # 格式2
+                                quote_data.append({
+                                    "date": execution_date.date().isoformat(),
+                                    "stock_code": row[0],
+                                    "stock_name": row[1],
+                                    "close_price": DataConverter.convert_value(row[2]),
+                                    "change_value": change_value,
+                                    "open_price": DataConverter.convert_value(row[4]),
+                                    "high_price": DataConverter.convert_value(row[5]),
+                                    "low_price": DataConverter.convert_value(row[6]),
+                                    "trade_volume": DataConverter.convert_value(row[8], is_int=True),
+                                    "trade_amount": DataConverter.convert_value(row[9], is_int=True),
+                                    "trade_count": DataConverter.convert_value(row[10], is_int=True),
+                                    "last_bid_price": DataConverter.convert_value(row[11]),
+                                    "last_bid_volume": DataConverter.convert_value(row[12], is_int=True),
+                                    "last_ask_price": DataConverter.convert_value(row[13]),
+                                    "last_ask_volume": DataConverter.convert_value(row[14], is_int=True),
+                                    "pe_ratio": None  # 上櫃股票沒有本益比資料
+                                })
+                            else:  # 格式1
+                                quote_data.append({
+                                    "date": execution_date.date().isoformat(),
+                                    "stock_code": row[0],
+                                    "stock_name": row[1],
+                                    "close_price": DataConverter.convert_value(row[2]),
+                                    "change_value": change_value,
+                                    "open_price": DataConverter.convert_value(row[4]),
+                                    "high_price": DataConverter.convert_value(row[5]),
+                                    "low_price": DataConverter.convert_value(row[6]),
+                                    "trade_volume": DataConverter.convert_value(row[8], is_int=True),
+                                    "trade_amount": DataConverter.convert_value(row[9], is_int=True),
+                                    "trade_count": DataConverter.convert_value(row[10], is_int=True),
+                                    "last_bid_price": DataConverter.convert_value(row[11]),
+                                    "last_bid_volume": None,  # 格式1沒有買量
+                                    "last_ask_price": DataConverter.convert_value(row[12]),
+                                    "last_ask_volume": None,  # 格式1沒有賣量
+                                    "pe_ratio": None  # 上櫃股票沒有本益比資料
+                                })
                         except (ValueError, IndexError) as e:
-                            logger.warning(f"Error parsing TPEX stock row: {str(e)}")
+                            logger.error(f"Error parsing TPEX stock row: {str(e)}, len: {len(row)}", exc_info=True)
                             continue
                     
             if not quote_data:
